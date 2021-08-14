@@ -2,7 +2,7 @@
 // Implements the Storage class
 #include "storage.h"
 
-namespace storage {
+namespace cycamore {
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Storage::Storage(cyclus::Context* ctx)
@@ -16,29 +16,29 @@ Storage::Storage(cyclus::Context* ctx)
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // pragmas
 
-#pragma cyclus def schema storage::Storage
+#pragma cyclus def schema cycamore::Storage
 
-#pragma cyclus def annotations storage::Storage
+#pragma cyclus def annotations cycamore::Storage
 
-#pragma cyclus def initinv storage::Storage
+#pragma cyclus def initinv cycamore::Storage
 
-#pragma cyclus def snapshotinv storage::Storage
+#pragma cyclus def snapshotinv cycamore::Storage
 
-#pragma cyclus def infiletodb storage::Storage
+#pragma cyclus def infiletodb cycamore::Storage
 
-#pragma cyclus def snapshot storage::Storage
+#pragma cyclus def snapshot cycamore::Storage
 
-#pragma cyclus def clone storage::Storage
+#pragma cyclus def clone cycamore::Storage
 
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 void Storage::InitFrom(Storage* m) {
-#pragma cyclus impl initfromcopy storage::Storage
+#pragma cyclus impl initfromcopy cycamore::Storage
   cyclus::toolkit::CommodityProducer::Copy(m);
 }
 
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 void Storage::InitFrom(cyclus::QueryableBackend* b) {
-#pragma cyclus impl initfromdb storage::Storage
+#pragma cyclus impl initfromdb cycamore::Storage
 
   using cyclus::toolkit::Commodity;
   Commodity commod = Commodity(out_commods.front());
@@ -75,9 +75,10 @@ void Storage::EnterNotify() {
   buy_policy.Start();
 
   if (out_commods.size() == 1) {
-    sell_policy.Init(this, &stocks, std::string("stocks"))
-        .Set(out_commods.front())
-        .Start();
+    sell_policy.Init(this, &stocks, std::string("stocks"), 1e+299, false, sell_quantity)
+      .Set(out_commods.front())
+      .Start();
+
   } else {
     std::stringstream ss;
     ss << "out_commods has " << out_commods.size() << " values, expected 1.";
@@ -255,4 +256,4 @@ extern "C" cyclus::Agent* ConstructStorage(cyclus::Context* ctx) {
   return new Storage(ctx);
 }
 
-}  // namespace storage
+}  // namespace cycamore

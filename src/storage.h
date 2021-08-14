@@ -6,14 +6,10 @@
 #include <vector>
 
 #include "cyclus.h"
-
-// forward declaration
-namespace storage {
-class Storage;
-} // namespace storage
+#include "cycamore_version.h"
 
 
-namespace storage {
+namespace cycamore {
 /// @class Storage
 ///
 /// This Facility is intended to hold materials for a user specified
@@ -36,6 +32,7 @@ namespace storage {
 /// in_recipe (optional) describes the incoming resource by recipe
 ///
 /// @section optionalparams Optional Parameters
+/// sell_quantity restricts selling to only integer multiples of this value
 /// max_inv_size is the maximum capacity of the inventory storage
 /// throughput is the maximum processing capacity per timestep
 ///
@@ -98,6 +95,8 @@ class Storage
 
   /// The handleTick function specific to the Storage.
   virtual void Tock();
+
+  virtual std::string version() { return CYCAMORE_VERSION; }
 
  protected:
   ///   @brief adds a material into the incoming commodity inventory
@@ -163,6 +162,17 @@ class Storage
                       "uitype": "range", \
                       "range": [0, 12000]}
   int residence_time;
+
+  #pragma cyclus var {"default": 0,\
+                      "tooltip":"sell quantity (kg)",\
+                      "doc":"material will be sold in integer multiples of this quantity. If"\
+                      " the buffer contains less than the sell quantity, no material will be"\
+                      " offered", \
+                      "uilabel":"Sell Quantity",\
+                      "uitype": "range", \
+                      "range": [0.0, 1e299], \
+                      "units": "kg"}
+  double sell_quantity;
 
   #pragma cyclus var {"default": 1e299,\
                      "tooltip":"throughput per timestep (kg)",\
@@ -237,6 +247,6 @@ class Storage
   friend class StorageTest;
 };
 
-}  // namespace storage
+}  // namespace cycamore
 
 #endif  // CYCLUS_STORAGES_STORAGE_H_
