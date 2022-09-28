@@ -115,10 +115,17 @@ std::string Storage::str() {
 
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 void Storage::Tick() {
+  
+
+  LOG(cyclus::LEV_INFO3, "ComCnv") << prototype() << " is ticking {";
+
+  LOG(cyclus::LEV_INFO3, "ComCnv") << "Processing = " << processing.quantity() << " and stocks = " << stocks.quantity() << " and max inventory = " << max_inv_size;
+
+  LOG(cyclus::LEV_INFO3, "ComCnv") << "current capacity " << max_inv_size << " - " << processing.quantity() << " - " << stocks.quantity() << " = " << current_capacity();
+
   // Set available capacity for Buy Policy
   inventory.capacity(current_capacity());
 
-  LOG(cyclus::LEV_INFO3, "ComCnv") << prototype() << " is ticking {";
 
   if (current_capacity() > cyclus::eps_rsrc()) {
     LOG(cyclus::LEV_INFO4, "ComCnv")
@@ -134,11 +141,20 @@ void Storage::Tock() {
 
   BeginProcessing_();  // place unprocessed inventory into processing
 
+  LOG(cyclus::LEV_INFO3, "ComCnv") << "preparing to process "
+                                   << processing.quantity() << " kg of material.";
+
   if (ready_time() >= 0 || residence_time == 0 && !inventory.empty()) {
     ReadyMatl_(ready_time());  // place processing into ready
   }
 
+  LOG(cyclus::LEV_INFO3, "ComCnv") << "preparing to send "
+                                  << ready.quantity() << " kg of material to stocks.";
+
   ProcessMat_(throughput);  // place ready into stocks
+
+  LOG(cyclus::LEV_INFO3, "ComCnv") << "preparing to send "
+                                   << stocks.quantity() << " kg of material to market.";
 
 
   std::vector<double>::iterator result;
@@ -150,6 +166,9 @@ void Storage::Tock() {
   // provide one value for out_commods, despite it being a vector of strings.
   cyclus::toolkit::RecordTimeSeries<double>("supply"+out_commods[0], this,
                                             stocks.quantity());
+
+  LOG(cyclus::LEV_INFO3, "ComCnv") << "at end of Tock, prcess has "
+                                   << processing.quantity() << " kg of material.Ready has " << ready.quantity() << " kg of material. Stocks has " << stocks.quantity() << " kg of material.";
   LOG(cyclus::LEV_INFO3, "ComCnv") << "}";
 }
 
