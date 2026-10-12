@@ -93,6 +93,30 @@ void Storage::EnterNotify() {
     throw cyclus::ValueError(ss.str());
   }
 
+  if (discrete_trading && sell_quantity > 0) {
+    throw cyclus::ValueError(
+        "discrete_trading cannot be used with sell_quantity: discrete bids are "
+        "sized by each resource object");
+  }
+  if (keep_packaging) {
+    if (!discrete_handling || !discrete_trading) {
+      throw cyclus::ValueError(
+          "keep_packaging requires both discrete_handling and "
+          "discrete_trading, otherwise packaged material could be split or "
+          "combined");
+    }
+    if (package != cyclus::Package::unpackaged_name()) {
+      throw cyclus::ValueError(
+          "keep_packaging cannot be used with a package other than " +
+          cyclus::Package::unpackaged_name() +
+          ", because material is traded in its existing package");
+    }
+  }
+  inventory.keep_packaging(keep_packaging);
+  processing.keep_packaging(keep_packaging);
+  ready.keep_packaging(keep_packaging);
+  stocks.keep_packaging(keep_packaging);
+
   for (int i = 0; i != in_commods.size(); ++i) {
     buy_policy.Set(in_commods[i], comp, in_commod_prefs[i]);
   }
@@ -102,7 +126,7 @@ void Storage::EnterNotify() {
   std::string tu_name_ = context()->GetTransportUnit(transport_unit)->name();
   if (out_commods.size() == 1) {
     sell_policy.Init(this, &stocks, std::string("stocks"), cyclus::CY_LARGE_DOUBLE, false,
-                     sell_quantity, package_name_, tu_name_)
+                     sell_quantity, package_name_, tu_name_, discrete_trading)
       .Set(out_commods.front())
       .Start();
 

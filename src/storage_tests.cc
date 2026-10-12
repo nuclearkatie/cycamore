@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <set>
+
 #include "storage_tests.h"
 
 namespace cycamore {
@@ -1154,6 +1157,155 @@ TEST_F(StorageTest, TransportUnit) {
 
   EXPECT_EQ(1, qr_res.GetVal<double>("Quantity", 0));
   EXPECT_EQ(1, qr_res.GetVal<double>("Quantity", 5));
+}
+
+TEST_F(StorageTest, DiscreteTradingSellQuantity) {
+  // discrete bids are sized by each object, so sell_quantity is not allowed
+  std::string config =
+    "   <in_commods> <val>commodity</val> </in_commods> "
+    "   <out_commods> <val>commodity1</val> </out_commods> "
+    "   <discrete_trading>1</discrete_trading> "
+    "   <sell_quantity>2</sell_quantity> ";
+
+  cyclus::MockSim sim(cyclus::AgentSpec (":cycamore:Storage"), config, 2);
+  EXPECT_THROW(sim.Run(), cyclus::ValueError);
+}
+
+TEST_F(StorageTest, KeepPackagingRequiresDiscrete) {
+  // keep_packaging needs both discrete_handling and discrete_trading
+  std::string base =
+    "   <in_commods> <val>commodity</val> </in_commods> "
+    "   <out_commods> <val>commodity1</val> </out_commods> "
+    "   <keep_packaging>1</keep_packaging> ";
+
+  cyclus::MockSim neither(cyclus::AgentSpec (":cycamore:Storage"), base, 2);
+  EXPECT_THROW(neither.Run(), cyclus::ValueError);
+
+  std::string handling_only =
+    base + "   <discrete_handling>1</discrete_handling> ";
+  cyclus::MockSim sim1(cyclus::AgentSpec (":cycamore:Storage"), handling_only,
+                       2);
+  EXPECT_THROW(sim1.Run(), cyclus::ValueError);
+
+  std::string trading_only = base + "   <discrete_trading>1</discrete_trading> ";
+  cyclus::MockSim sim2(cyclus::AgentSpec (":cycamore:Storage"), trading_only,
+                       2);
+  EXPECT_THROW(sim2.Run(), cyclus::ValueError);
+}
+
+TEST_F(StorageTest, KeepPackagingWithPackage) {
+  // kept packages are traded as-is, so a different sell package is not allowed
+  std::string config =
+    "   <in_commods> <val>commodity</val> </in_commods> "
+    "   <out_commods> <val>commodity1</val> </out_commods> "
+    "   <discrete_handling>1</discrete_handling> "
+    "   <discrete_trading>1</discrete_trading> "
+    "   <keep_packaging>1</keep_packaging> "
+    "   <package>foo</package> ";
+
+  cyclus::MockSim sim(cyclus::AgentSpec (":cycamore:Storage"), config, 2);
+  sim.context()->AddPackage("foo", 1, 2, "first");
+  EXPECT_THROW(sim.Run(), cyclus::ValueError);
+}
+
+std::vector<StorageTest::TradedObj> StorageTest::RunDiscreteStorage(
+    std::string extra_config, bool keep_pkg, double sink_cap,
+    std::vector<int>& ids) {
+  std::string config =
+    "   <in_commods> <val>commodity</val> </in_commods> "
+    "   <out_commods> <val>commodity1</val> </out_commods> "
+    "   <residence_time>0</residence_time> "
+    "   <discrete_handling>1</discrete_handling> "
+    "   <discrete_trading>1</discrete_trading> " + extra_config;
+
+  cyclus::MockSim sim(cyclus::AgentSpec (":cycamore:Storage"), config, 3);
+  sim.context()->AddPackage("pkg", 4, 10, "first");
+  sim.AddSink("commodity1").capacity(sink_cap).Finalize();
+
+  Storage* stor = dynamic_cast<Storage*>(sim.agent);
+  // EnterNotify sets this during Run; set it now so seeding keeps packaging
+  stor->inventory.keep_packaging(keep_pkg);
+  cyclus::CompMap cm;
+  cm[922380000] = 1;
+  cyclus::Composition::Ptr c = cyclus::Composition::CreateFromMass(cm);
+  double sizes[] = {9.7, 9.5, 4.0};
+  ids.clear();
+  for (int i = 0; i < 3; ++i) {
+    cyclus::Material::Ptr m =
+        cyclus::Material::Create(sim.agent, sizes[i], c, "pkg");
+    stor->inventory.Push(m);
+    ids.push_back(m->state_id());
+  }
+
+  EXPECT_NO_THROW(sim.Run());
+
+  std::vector<TradedObj> out;
+  std::vector<cyclus::Cond> tr_conds;
+  tr_conds.push_back(cyclus::Cond("Commodity", "==", std::string("commodity1")));
+  cyclus::QueryResult trans = sim.db().Query("Transactions", &tr_conds);
+  for (int i = 0; i < trans.rows.size(); ++i) {
+    int res_id = trans.GetVal<int>("ResourceId", i);
+    std::vector<cyclus::Cond> conds;
+    conds.push_back(cyclus::Cond("ResourceId", "==", res_id));
+    cyclus::QueryResult res = sim.db().Query("Resources", &conds);
+    TradedObj t = {trans.GetVal<int>("Time", i), res_id,
+                   res.GetVal<double>("Quantity", 0),
+                   res.GetVal<std::string>("PackageName", 0)};
+    out.push_back(t);
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+TEST_F(StorageTest, DiscreteKeepPackagingUnlimited) {
+  // a sink that can take everything gets every original object, whole and in
+  // its original package, rather than one merged object
+  std::vector<int> ids;
+  std::vector<TradedObj> traded = RunDiscreteStorage(
+      "<keep_packaging>1</keep_packaging>", true, 1000, ids);
+
+  ASSERT_EQ(traded.size(), 3);
+  std::set<int> got;
+  for (int i = 0; i < traded.size(); ++i) {
+    EXPECT_EQ(traded[i].time, 1);
+    EXPECT_EQ(traded[i].pkg, "pkg");
+    got.insert(traded[i].res_id);
+  }
+  EXPECT_EQ(got, std::set<int>(ids.begin(), ids.end()));
+}
+
+TEST_F(StorageTest, DiscreteKeepPackagingLimited) {
+  // a 15 kg sink: at time 1, 9.7 is sent, 9.5 no longer fits and is skipped,
+  // 4.0 is sent. At time 2 the 9.5 is sent. Nothing is split.
+  std::vector<int> ids;
+  std::vector<TradedObj> traded = RunDiscreteStorage(
+      "<keep_packaging>1</keep_packaging>", true, 15, ids);
+
+  ASSERT_EQ(traded.size(), 3);
+  std::set<int> t1 = {traded[0].res_id, traded[1].res_id};
+  std::set<int> exp_t1 = {ids[0], ids[2]};
+  EXPECT_EQ(traded[0].time, 1);
+  EXPECT_EQ(traded[1].time, 1);
+  EXPECT_EQ(t1, exp_t1);
+  EXPECT_EQ(traded[2].time, 2);
+  EXPECT_EQ(traded[2].res_id, ids[1]);
+  EXPECT_DOUBLE_EQ(traded[2].qty, 9.5);
+  for (int i = 0; i < traded.size(); ++i) {
+    EXPECT_EQ(traded[i].pkg, "pkg");
+  }
+}
+
+TEST_F(StorageTest, DiscreteTradingWithoutKeepPackaging) {
+  // without keep_packaging, packaging is stripped on arrival but objects are
+  // still traded whole
+  std::vector<int> ids;
+  std::vector<TradedObj> traded = RunDiscreteStorage("", false, 15, ids);
+
+  ASSERT_EQ(traded.size(), 3);
+  std::multiset<double> t1 = {traded[0].qty, traded[1].qty};
+  std::multiset<double> exp_t1 = {9.7, 4.0};
+  EXPECT_EQ(t1, exp_t1);
+  EXPECT_DOUBLE_EQ(traded[2].qty, 9.5);
 }
 
 } // namespace cycamore

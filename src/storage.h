@@ -38,6 +38,10 @@ namespace cycamore {
 /// max_inv_size is the maximum capacity of the inventory storage
 /// throughput is the maximum processing capacity per timestep
 /// package is the name of the package type to ship
+/// discrete_handling determines whether batches are split or combined within
+/// the facility
+/// discrete_trading determines whether resource objects are traded whole
+/// keep_packaging determines whether incoming packaging is preserved
 ///
 /// @section detailed Detailed Behavior
 ///
@@ -59,7 +63,11 @@ namespace cycamore {
 /// inventory.
 ///
 /// Making Offers:
-/// Any stocks material in the stocks buffer is offered to the market.
+/// Any stocks material in the stocks buffer is offered to the market. If
+/// discrete_trading is true, each resource object in stocks is offered whole,
+/// as its own exclusive bid, oldest first; objects that do not fit what is
+/// left of a request are skipped. If keep_packaging is also true, packaged
+/// objects are traded in their existing package.
 ///
 /// Sending Resources:
 /// Matched resources are sent immediately.
@@ -82,7 +90,9 @@ class Storage
                               "Storage also has the functionality to handle materials in discrete or continuous batches. Discrete "\
                               "mode does not split or combine material batches. Continuous mode, which is the default, however, "\
                               "divides material batches if necessary in order to push materials through the facility as quickly "\
-                              "as possible."}
+                              "as possible. Discrete handling only applies within the facility. To also trade material "\
+                              "batches away whole, use discrete trading, and to preserve the packaging of incoming "\
+                              "material, use keep packaging."}
 
   /// A verbose printer for the Storage Facility
   virtual std::string str();
@@ -192,6 +202,33 @@ class Storage
                             "Otherwise, batches may be divided during processing. Default to false (continuous))",\
                       "uilabel":"Batch Handling"}
   bool discrete_handling;
+
+  #pragma cyclus var {"default": False,\
+                      "tooltip":"Bool to determine whether Storage trades resource objects whole",\
+                      "doc":"Determines if Storage will divide or combine resource objects when "\
+                            "trading them away. If true, each resource object in stocks is "\
+                            "offered as its own exclusive bid of exactly its quantity, oldest "\
+                            "first, and the traded object is never split or combined. An object "\
+                            "that does not fit in what is left of a request is skipped and newer "\
+                            "objects are still considered. If a package is set, only objects "\
+                            "that fit whole in a single package are traded. Cannot be used with "\
+                            "sell_quantity. Default to false (continuous)",\
+                      "uilabel":"Discrete Trading"}
+  bool discrete_trading;
+
+  #pragma cyclus var {"default": False,\
+                      "tooltip":"Whether to persist packaging through the storage facility",\
+                      "doc":"Boolean value about whether to keep packaging. If true, "\
+                            "packaging will not be stripped upon acceptance into the "\
+                            "storage facility, and packaged material is traded away in its "\
+                            "existing package. If false, package type will be stripped "\
+                            "immediately upon acceptance. Has no effect if the incoming "\
+                            "material is not packaged. Requires discrete_handling and "\
+                            "discrete_trading, and cannot be used with a package other than "\
+                            "unpackaged.",\
+                      "uilabel":"Keep Packaging",\
+                      "uitype": "bool"}
+  bool keep_packaging;
 
   #pragma cyclus var {"default": "unpackaged", \
                       "tooltip": "Output package", \

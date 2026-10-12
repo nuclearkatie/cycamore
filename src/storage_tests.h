@@ -30,6 +30,26 @@ class StorageTest : public ::testing::Test {
   void TestReadyTime(cycamore::Storage* fac, int t);
   void TestCurrentCap(cycamore::Storage* fac, double inv);
 
+  /// A resource object traded out of storage, as recorded in the database
+  struct TradedObj {
+    int time;
+    int res_id;
+    double qty;
+    std::string pkg;
+    bool operator<(const TradedObj& o) const {
+      return time != o.time ? time < o.time : res_id < o.res_id;
+    }
+  };
+
+  /// Seeds a discrete-trading storage's inventory with packaged objects of
+  /// 9.7, 9.5 and 4.0 kg (oldest first), runs it against one sink of the given
+  /// capacity and returns what the sink received, ordered by time. The
+  /// original resource ids are returned in ids.
+  static std::vector<TradedObj> RunDiscreteStorage(std::string extra_config,
+                                                   bool keep_pkg,
+                                                   double sink_cap,
+                                                   std::vector<int>& ids);
+
   std::vector<std::string> in_c1, out_c1;
   std::string in_r1;
 
